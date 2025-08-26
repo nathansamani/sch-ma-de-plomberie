@@ -59,6 +59,8 @@
       <button id="matCopper" aria-pressed="false" title="Cuivre">Cuivre</button>
       <span class="small">Ø (mm) :</span>
       <select id="pipeDia"><option>12</option><option selected>16</option><option>20</option><option>26</option><option>32</option></select>
+      <span class="small">Couleur :</span>
+      <input type="color" id="pipeColor" value="#cfd6df" title="Couleur du tuyau" />
       <button id="importBgBtn" title="Importer une image de fond">🖼️ Fond</button>
       <button id="exportSVGBtn" class="primary" title="Exporter en SVG">⬇️ SVG</button>
       <button id="clearBtn" class="warn" title="Vider la scène">🗑️ Vider</button>
@@ -120,6 +122,7 @@
   const grid = 20;
   let currentTool = 'select';
   let currentPipeMat = 'plastique'; // 'plastique' | 'cuivre'
+  let currentPipeColor = '#cfd6df';
   let currentPipeDia = 16; // mm -> converti en épaisseur de trait
   const svg = document.getElementById('canvas');
   const bgLayer = document.getElementById('bgLayer');
@@ -199,7 +202,7 @@
 
   // === Outil TUYAU : orthogonal, magnétique, matériaux, Ø ===
   let pipeDraft=null, pipePoints=[];
-  function pipeStrokePaint(){ return currentPipeMat==='cuivre' ? 'url(#copperGrad)' : '#cfd6df'; }
+  function pipeStrokePaint(){ return currentPipeMat==='cuivre' ? 'url(#copperGrad)' : currentPipeColor; }
   function pipeStrokeWidth(){ return Math.max(6, Math.round(currentPipeDia*0.6)); } // mapping simple mm -> px
 
   function startPipeAt(pt){
@@ -212,6 +215,7 @@
     pipeDraft.setAttribute('stroke-linecap','round');
     pipeDraft.setAttribute('stroke-linejoin','round');
     pipeDraft.setAttribute('filter','url(#softShadow)');
+    pipeDraft.classList.add('pipe');
     pipeLayer.appendChild(pipeDraft);
   }
   function updatePipePreview(pt,constrain){
@@ -254,9 +258,10 @@
   function setTool(t){ currentTool=t; hudTool.textContent=(t==='pipe'?'Tuyau':'Sélection'); }
   $('#pipeToolBtn').onclick=()=>setTool('pipe'); $('#selectToolBtn').onclick=()=>setTool('select');
   document.addEventListener('keydown', e=>{ if(e.key==='p'||e.key==='P') setTool('pipe'); if(e.key==='v'||e.key==='V') setTool('select'); if(e.key==='r'||e.key==='R') if(selected) rotate(selected); if(e.key==='Delete'||e.key==='Backspace') if(selected){ selected.remove(); selected=null; } if(e.key==='Enter'&&currentTool==='pipe') finishPipe(); });
-  $('#matPlastic').onclick=()=>{ currentPipeMat='plastique'; $('#matPlastic').setAttribute('aria-pressed','true'); $('#matCopper').setAttribute('aria-pressed','false'); if(pipeDraft){ pipeDraft.setAttribute('stroke', pipeStrokePaint()); } };
-  $('#matCopper').onclick=()=>{ currentPipeMat='cuivre';   $('#matPlastic').setAttribute('aria-pressed','false'); $('#matCopper').setAttribute('aria-pressed','true');  if(pipeDraft){ pipeDraft.setAttribute('stroke', pipeStrokePaint()); } };
+  $('#matPlastic').onclick=()=>{ currentPipeMat='plastique'; $('#matPlastic').setAttribute('aria-pressed','true'); $('#matCopper').setAttribute('aria-pressed','false'); if(pipeDraft){ pipeDraft.setAttribute('stroke', pipeStrokePaint()); } if(selected && selected.classList.contains('pipe')){ selected.setAttribute('stroke', pipeStrokePaint()); } };
+  $('#matCopper').onclick=()=>{ currentPipeMat='cuivre';   $('#matPlastic').setAttribute('aria-pressed','false'); $('#matCopper').setAttribute('aria-pressed','true');  if(pipeDraft){ pipeDraft.setAttribute('stroke', pipeStrokePaint()); } if(selected && selected.classList.contains('pipe')){ selected.setAttribute('stroke', pipeStrokePaint()); } };
   $('#pipeDia').onchange=e=>{ currentPipeDia=parseInt(e.target.value,10)||16; if(pipeDraft){ pipeDraft.setAttribute('stroke-width', pipeStrokeWidth()); } };
+  $('#pipeColor').onchange=e=>{ currentPipeColor=e.target.value; if(pipeDraft){ pipeDraft.setAttribute('stroke', pipeStrokePaint()); } if(selected && selected.classList.contains('pipe')){ selected.setAttribute('stroke', pipeStrokePaint()); } };
 
   // Import fond
   $('#importBgBtn').onclick=()=>$('#bgFile').click();
