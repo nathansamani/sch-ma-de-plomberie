@@ -5,4 +5,4 @@ Logiciel sans installation de réalisation simple d'installations
 
 Ajoutez vos images de composants (SVG, JPG, WebP) dans le dossier
 `bibliotheque/` à la racine du projet. Les sous-dossiers deviennent des
-catégories dans l'interface.
+catégories dans l'interface
