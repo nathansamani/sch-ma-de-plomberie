@@ -60,8 +60,7 @@
       <span class="small">Ø (mm) :</span>
       <select id="pipeDia"><option>12</option><option selected>16</option><option>20</option><option>26</option><option>32</option></select>
       <button id="importBgBtn" title="Importer une image de fond">🖼️ Fond</button>
-      <button id="exportPNGBtn" class="primary" title="Exporter en PNG">⬇️ PNG</button>
-      <button id="exportSVGBtn" title="Exporter en SVG">⬇️ SVG</button>
+      <button id="exportSVGBtn" class="primary" title="Exporter en SVG">⬇️ SVG</button>
       <button id="clearBtn" class="warn" title="Vider la scène">🗑️ Vider</button>
     </div>
   </header>
@@ -107,15 +106,15 @@
     <div class="float">
       <h4>Fond & bibliothèque</h4>
       <div class="row">
-        <label>Image de fond (PNG/JPG)
-          <input type="file" id="bgFile" accept="image/png,image/jpeg" />
+        <label>Image de fond (JPG)
+          <input type="file" id="bgFile" accept="image/jpeg" />
         </label>
       </div>
       <div class="row"><button id="lockBgBtn">🔒 Verrouiller fond</button></div>
-      <div class="small">
-        Placez vos images PNG/JPG/WebP dans <span class="kbd">/composants/</span>. Les <b>sous-dossiers</b> deviennent des catégories.
-        Option : <span class="kbd">/composants/_index.json</span> pour accélérer le chargement.
-      </div>
+        <div class="small">
+            Placez vos images SVG/JPG/WebP dans <span class="kbd">bibliotheque/</span>. Les <b>sous-dossiers</b> deviennent des catégories.
+          Option : <span class="kbd">bibliotheque/_index.json</span> pour accélérer le chargement.
+        </div>
     </div>
   </main>
 </div>
@@ -270,23 +269,22 @@
 
   // Export
   $('#exportSVGBtn').onclick=()=>{ const clone=svg.cloneNode(true); clone.querySelectorAll('.selected').forEach(n=>n.classList.remove('selected')); const data=new XMLSerializer().serializeToString(clone); download(URL.createObjectURL(new Blob([data],{type:'image/svg+xml'})),'plumbsketch.svg'); };
-  $('#exportPNGBtn').onclick=()=>{ const clone=svg.cloneNode(true); clone.querySelectorAll('.selected').forEach(n=>n.classList.remove('selected')); const data=new XMLSerializer().serializeToString(clone); const img=new Image(); const url=URL.createObjectURL(new Blob([data],{type:'image/svg+xml;charset=utf-8'})); img.onload=()=>{ const c=document.createElement('canvas'); c.width=svg.viewBox.baseVal.width; c.height=svg.viewBox.baseVal.height; const ctx=c.getContext('2d'); ctx.fillStyle='#0b0f15'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(img,0,0); c.toBlob(b=>download(URL.createObjectURL(b),'plumbsketch.png')); URL.revokeObjectURL(url); }; img.src=url; };
   function download(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
 
   // Zoom (Ctrl+wheel)
   let scale=1; document.getElementById('workwrap').addEventListener('wheel',e=>{ if(!e.ctrlKey) return; e.preventDefault(); scale=Math.min(2,Math.max(0.4, scale+(e.deltaY<0?0.1:-0.1))); svg.style.transformOrigin='0 0'; svg.style.transform=`scale(${scale})`; document.getElementById('zoom').textContent=Math.round(scale*100)+'%'; },{passive:false});
 
-  // Démo + chargement auto depuis /composants
+  // Démo + chargement auto depuis /bibliotheque
   placeDemo(); loadExternalComponents();
 
   function placeDemo(){ ['pipe-straight','elbow-90','tee','valve','tap'].forEach((id,i)=>{ const m=library.find(x=>x.id===id); const g=createComponentInstance(m, 420+i*200, 320); compLayer.appendChild(g); }); }
 
-  // === Auto-bibliothèque depuis /composants ===
+  // === Auto-bibliothèque depuis /bibliotheque ===
   async function loadExternalComponents(){
     let entries=[];
     // 1) index JSON optionnel
     try{
-      const res=await fetch('/composants/_index.json',{cache:'no-store'});
+      const res=await fetch('bibliotheque/_index.json',{cache:'no-store'});
       if(res.ok){
         const data=await res.json();
         if(Array.isArray(data)) entries=data;
@@ -296,7 +294,7 @@
     // 2) sinon, tenter un listing HTML (autoindex)
     if(entries.length===0){
       try{
-        const res=await fetch('/composants/'); if(res.ok){ const html=await res.text(); const files=parseLinksFromListing(html,'/composants/'); entries.push(...files.map(p=>({name:basename(p), cat:inferCatFromPath(p)||'Autres', path:p}))); }
+        const res=await fetch('bibliotheque/'); if(res.ok){ const html=await res.text(); const files=parseLinksFromListing(html,'bibliotheque/'); entries.push(...files.map(p=>({name:basename(p), cat:inferCatFromPath(p)||'Autres', path:p}))); }
       }catch(e){}
     }
     // 3) Hydrate UI
@@ -309,7 +307,7 @@
   }
 
   // Schéma de nommage fichiers :
-  // /composants/<Categorie>/<Nom_du_composant>@64.png
+  // bibliotheque/<Categorie>/<Nom_du_composant>@64.svg
   // - Catégorie = nom du sous-dossier (ex. Raccords, Vannes, Sanitaires…)
   // - Nom = nom de fichier sans extension, "_" -> espace (ex. "Vanne_papillon")
   // - Suffixe optionnel "@64" pour une taille préférée d’aperçu (ignoré si absent)
@@ -322,7 +320,7 @@
   function basename(p){ const a=p.split('/'); return decodeURIComponent(a[a.length-1]||p); }
   function prettyName(file){ return file.replace(/\\.[a-z0-9]+$/i,'').replace(/@\\d+$/,'').replace(/[_-]+/g,' ').trim(); }
   function parsePreferredSize(file){ const m=/@(\\d+)(?=\\.[a-z0-9]+$|$)/i.exec(file); return m? Math.max(40, Math.min(160, +m[1])) : null; }
-  function parseLinksFromListing(html,base){ const div=document.createElement('div'); div.innerHTML=html; const exts=['.png','.jpg','.jpeg','.webp']; const anchors=[...div.querySelectorAll('a')]; const urls=anchors.map(a=>a.getAttribute('href')||'').filter(h=>exts.some(ext=>h.toLowerCase().endsWith(ext))); return urls.map(u=>u.startsWith('http')?u:(base+u).replace(/\\\\/g,'/')); }
+  function parseLinksFromListing(html,base){ const div=document.createElement('div'); div.innerHTML=html; const exts=['.jpg','.jpeg','.webp','.svg']; const anchors=[...div.querySelectorAll('a')]; const urls=anchors.map(a=>a.getAttribute('href')||'').filter(h=>exts.some(ext=>h.toLowerCase().endsWith(ext))); return urls.map(u=>u.startsWith('http')?u:(base+u).replace(/\\\\/g,'/')); }
 
   // Helpers SVG
   function svgEl(n){ return document.createElementNS('http://www.w3.org/2000/svg',n); }
