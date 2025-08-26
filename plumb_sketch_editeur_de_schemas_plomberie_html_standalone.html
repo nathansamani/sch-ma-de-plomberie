@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PlumbSketch — éditeur de schémas plomberie</title>
+<style>
+  :root{ --bg:#0b0d10; --panel:#111419; --ink:#e6eaef; --accent:#5dd3ff; --accent2:#6ee7b7; --warn:#ffb454; --grid:20px; --shadow:0 8px 24px rgba(0,0,0,.35); }
+  *{box-sizing:border-box}
+  html,body{height:100%; margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  .app{display:grid; grid-template-columns:320px 1fr; grid-template-rows:56px 1fr; height:100%}
+  header{grid-column:1/-1; display:flex; align-items:center; gap:10px; padding:10px 16px; background:linear-gradient(180deg,#131821,#0d1117); border-bottom:1px solid #1b212b}
+  header .title{font-weight:700}
+  header .toolbar{margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  button{appearance:none; border:1px solid #2a2f37; background:#151a21; color:var(--ink); padding:8px 10px; border-radius:10px; cursor:pointer; box-shadow:var(--shadow); display:inline-flex; align-items:center; gap:6px}
+  button:hover{border-color:#394152; background:#171e26}
+  button.primary{border-color:#254a5b; background:#0f1b22}
+  button.primary[aria-pressed="true"], button[aria-pressed="true"]{outline:2px solid #2b6076}
+  button.warn{border-color:#5b3f25; background:#22160f}
+  aside{background:var(--panel); border-right:1px solid #1b212b; overflow:auto}
+  .section{padding:14px 14px 6px; border-bottom:1px solid #1b212b}
+  .section h3{margin:0 0 10px; font-size:13px; color:#b9c2cf; text-transform:uppercase; letter-spacing:.2px}
+  .palette{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+  .item{border:1px dashed #333a46; border-radius:10px; padding:8px; background:#0f1318; display:flex; align-items:center; justify-content:center; cursor:grab; user-select:none}
+  .item:hover{border-color:#485468}
+  .item svg,.item img{width:56px; height:56px; pointer-events:none}
+  details{border:1px solid #1b212b; border-radius:12px; margin:10px; background:#0e1218}
+  summary{list-style:none; padding:10px 12px; cursor:pointer; color:#cbd5e1; border-bottom:1px solid #141a22}
+  .cat-body{padding:10px 12px}
+  main{position:relative; background:#0a0d12}
+  #workwrap{position:absolute; inset:0; overflow:auto; background:
+    linear-gradient(transparent 0, transparent calc(var(--grid) - 1px), rgba(255,255,255,.03) calc(var(--grid) - 1px)),
+    linear-gradient(90deg, transparent 0, transparent calc(var(--grid) - 1px), rgba(255,255,255,.03) calc(var(--grid) - 1px));
+    background-size: var(--grid) var(--grid), var(--grid) var(--grid);}
+  #canvas{width:2400px; height:1600px; display:block; margin:80px; background:#0b0f15; border:1px solid #1a202a; border-radius:14px}
+  .hud{position:absolute; left:16px; bottom:16px; padding:8px 10px; background:#0e1218; border:1px solid #1b212b; border-radius:10px; color:#b9c2cf}
+  .selected{outline:2px solid var(--accent); outline-offset:2px}
+  .handle{fill:#0000; cursor:move}
+  .anchor{fill:var(--accent2); opacity:.0}
+  .anchor.hot{opacity:.9}
+  .float{position:absolute; right:16px; top:70px; width:320px; padding:12px; background:#0e1218; border:1px solid #1b212b; border-radius:12px; box-shadow:var(--shadow)}
+  .float h4{margin:0 0 8px; font-size:13px; color:#cbd5e1; text-transform:uppercase}
+  .row{display:flex; gap:8px; margin:8px 0}
+  .row label{flex:1; display:flex; flex-direction:column; gap:6px; font-size:12px; color:#b9c2cf}
+  input[type="file"]{font-size:12px}
+  .small{font-size:12px; color:#93a1b5}
+  .kbd{font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#0b0f15; border:1px solid #1e2430; border-radius:6px; padding:2px 6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">PlumbSketch</div>
+    <div class="toolbar">
+      <button id="pipeToolBtn" class="primary" title="Outil tuyau (P)">🛠️ Tuyau</button>
+      <button id="selectToolBtn" title="Sélection (V)">🖱️ Sélection</button>
+      <span class="small">Matériau :</span>
+      <button id="matPlastic" aria-pressed="true" title="Plastique (PVC/PE)">Plastique</button>
+      <button id="matCopper" aria-pressed="false" title="Cuivre">Cuivre</button>
+      <span class="small">Ø (mm) :</span>
+      <select id="pipeDia"><option>12</option><option selected>16</option><option>20</option><option>26</option><option>32</option></select>
+      <button id="importBgBtn" title="Importer une image de fond">🖼️ Fond</button>
+      <button id="exportPNGBtn" class="primary" title="Exporter en PNG">⬇️ PNG</button>
+      <button id="exportSVGBtn" title="Exporter en SVG">⬇️ SVG</button>
+      <button id="clearBtn" class="warn" title="Vider la scène">🗑️ Vider</button>
+    </div>
+  </header>
+
+  <aside>
+    <div class="section">
+      <h3>Bibliothèque (auto + 5 éléments de base)</h3>
+      <div id="cats"></div>
+    </div>
+    <div class="section small">
+      <div><span class="kbd">P</span> Tuyau • <span class="kbd">V</span> Sélection • <span class="kbd">R</span> Rotation 90° • <span class="kbd">Suppr</span> Supprimer • <span class="kbd">Maj</span> contraint H/V</div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="workwrap">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="2400" height="1600" viewBox="0 0 2400 1600">
+        <defs>
+          <!-- Dégradé cuivre léger (le plastique reste en aplat) -->
+          <linearGradient id="copperGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%"  stop-color="#c97f3d"/>
+            <stop offset="45%" stop-color="#e0a169"/>
+            <stop offset="100%" stop-color="#b86e2e"/>
+          </linearGradient>
+          <!-- Métal neutre pour accessoires -->
+          <linearGradient id="steelGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#9fb2ca"/>
+            <stop offset="50%" stop-color="#cdd6e3"/>
+            <stop offset="100%" stop-color="#8a9db6"/>
+          </linearGradient>
+          <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="1.2" flood-color="#000" flood-opacity="0.35"/>
+          </filter>
+        </defs>
+        <g id="bgLayer"></g>
+        <g id="pipeLayer"></g>
+        <g id="compLayer"></g>
+        <g id="uiLayer"></g>
+      </svg>
+      <div class="hud">outil : <b id="toolName">Sélection</b> • zoom: <span id="zoom">100%</span> • grille: 20px</div>
+    </div>
+
+    <div class="float">
+      <h4>Fond & bibliothèque</h4>
+      <div class="row">
+        <label>Image de fond (PNG/JPG)
+          <input type="file" id="bgFile" accept="image/png,image/jpeg" />
+        </label>
+      </div>
+      <div class="row"><button id="lockBgBtn">🔒 Verrouiller fond</button></div>
+      <div class="small">
+        Placez vos images PNG/JPG/WebP dans <span class="kbd">/composants/</span>. Les <b>sous-dossiers</b> deviennent des catégories.
+        Option : <span class="kbd">/composants/_index.json</span> pour accélérer le chargement.
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  const grid = 20;
+  let currentTool = 'select';
+  let currentPipeMat = 'plastique'; // 'plastique' | 'cuivre'
+  let currentPipeDia = 16; // mm -> converti en épaisseur de trait
+  const svg = document.getElementById('canvas');
+  const bgLayer = document.getElementById('bgLayer');
+  const compLayer = document.getElementById('compLayer');
+  const pipeLayer = document.getElementById('pipeLayer');
+  const hudTool = document.getElementById('toolName');
+  const zoomEl = document.getElementById('zoom');
+
+  const $ = sel => document.querySelector(sel);
+  function snap(v){ return Math.round(v / grid) * grid }
+  function svgPoint(evt){ const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+  function makeId(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9) }
+
+  // === LIBRAIRIE : 5 éléments de base (visuels simples, ancrages magnétiques) ===
+  const library = [
+    {id:'pipe-straight', name:'Tube droit', cat:'Tuyauterie', render:(g)=>{ const r=rect(-40,-10,80,20,10); r.setAttribute('fill','url(#steelGrad)'); r.setAttribute('filter','url(#softShadow)'); g.appendChild(r); addAnchors(g,[{x:-40,y:0},{x:40,y:0}]); }},
+    {id:'elbow-90', name:'Coude 90°', cat:'Raccords', render:(g)=>{ const p=path('M 0 0 h 60 a 20 20 0 0 1 -20 20 h -40'); styleStroke(p,'url(#steelGrad)',20); g.appendChild(p); addAnchors(g,[{x:-40,y:0},{x:60,y:0}]); }},
+    {id:'tee', name:'Té', cat:'Raccords', render:(g)=>{ const h=line(-50,0,50,0); styleStroke(h,'url(#steelGrad)',20); const v=line(0,0,0,50); styleStroke(v,'url(#steelGrad)',20); const w=group(h,v); w.setAttribute('filter','url(#softShadow)'); g.appendChild(w); addAnchors(g,[{x:-50,y:0},{x:50,y:0},{x:0,y:50}]); }},
+    {id:'valve', name:'Vanne', cat:'Vannes', render:(g)=>{ const body=rect(-18,-12,36,24,4); body.setAttribute('fill','#a5b4c9'); body.setAttribute('filter','url(#softShadow)'); const knob=rect(-30,-5,60,10,2); knob.setAttribute('fill','#7d8ba2'); const inlet=rect(-60,-6,24,12,6); inlet.setAttribute('fill','url(#steelGrad)'); const outlet=inlet.cloneNode(true); outlet.setAttribute('x',36); g.append(body,knob,inlet,outlet); addAnchors(g,[{x:-60,y:0},{x:60,y:0}]); }},
+    {id:'tap', name:'Robinet', cat:'Sanitaires', render:(g)=>{ const base=circle(0,0,16); base.setAttribute('fill','#bfc9d9'); base.setAttribute('filter','url(#softShadow)'); const sp=rect(0,-5,40,10,5); sp.setAttribute('fill','#a5b4c9'); g.append(base,sp); addAnchors(g,[{x:-24,y:0},{x:40,y:0}]); }},
+  ];
+
+  // Catégories UI
+  const catsEl = document.getElementById('cats');
+  const catMap = {};
+  ['Tuyauterie','Raccords','Vannes','Sanitaires','Autres'].forEach(name=>{
+    const details=document.createElement('details'); details.open=true;
+    const sum=document.createElement('summary'); sum.textContent=name; details.appendChild(sum);
+    const body=document.createElement('div'); body.className='cat-body';
+    const gridC=document.createElement('div'); gridC.className='palette'; body.appendChild(gridC);
+    details.appendChild(body); catsEl.appendChild(details); catMap[name]=gridC;
+  });
+  library.forEach(addPaletteItem);
+
+  function addPaletteItem(comp){
+    const cell=document.createElement('div'); cell.className='item'; cell.draggable=true; cell.dataset.compId=comp.id;
+    const mini=svgEl('svg'); mini.setAttribute('viewBox','-64 -64 128 128'); mini.setAttribute('width','56'); mini.setAttribute('height','56');
+    const g=svgEl('g'); comp.render(g); mini.appendChild(g); cell.appendChild(mini);
+    (catMap[comp.cat]||catMap['Autres']).appendChild(cell);
+    cell.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', comp.id); });
+  }
+
+  // Dépôt de la palette sur la scène
+  svg.addEventListener('dragover', e=>e.preventDefault());
+  svg.addEventListener('drop', e=>{
+    e.preventDefault();
+    const id = e.dataTransfer.getData('text/plain');
+    const comp = library.find(c=>c.id===id);
+    if(!comp) return;
+    const pt=svgPoint(e); const x=snap(pt.x), y=snap(pt.y);
+    const g=createComponentInstance(comp,x,y);
+    compLayer.appendChild(g); select(g);
+  });
+
+  function createComponentInstance(model,x,y,href){
+    const g=svgEl('g'); g.setAttribute('class','comp'); g.setAttribute('data-model',model.id);
+    g.setAttribute('transform',`translate(${x},${y}) rotate(0)`);
+    if(href){ const img=svgEl('image'); img.setAttributeNS('http://www.w3.org/1999/xlink','href',href); img.setAttribute('x',-40); img.setAttribute('y',-40); img.setAttribute('width',80); img.setAttribute('height',80); img.setAttribute('preserveAspectRatio','xMidYMid meet'); g.appendChild(img); addAnchors(g,[{x:-40,y:0},{x:40,y:0},{x:0,y:-40},{x:0,y:40}]); }
+    else { model.render(g); }
+    const handle=rect(-60,-60,120,120,0); handle.setAttribute('class','handle'); handle.setAttribute('fill','transparent'); g.appendChild(handle);
+    enableDrag(g); g.addEventListener('dblclick',()=>rotate(g));
+    return g;
+  }
+
+  function rotate(g){ const {x,y,r}=getTransform(g); const nr=(r+90)%360; g.setAttribute('transform',`translate(${x},${y}) rotate(${nr})`); }
+  function addAnchors(g,pts){ pts.forEach(p=>{ const a=circle(p.x,p.y,5); a.setAttribute('class','anchor'); g.appendChild(a); }); }
+
+  // Drag + snap
+  let dragState=null, selected=null;
+  function enableDrag(g){
+    g.addEventListener('pointerdown', e=>{ if(e.button!==0) return; setTool('select'); select(g); const pt=svgPoint(e); const {x,y,r}=getTransform(g); dragState={g,startMouse:pt,startPos:{x,y},r}; g.setPointerCapture(e.pointerId); });
+    g.addEventListener('pointermove', e=>{ if(!dragState) return; const pt=svgPoint(e); const nx=snap(dragState.startPos.x + (pt.x - dragState.startMouse.x)); const ny=snap(dragState.startPos.y + (pt.y - dragState.startMouse.y)); dragState.g.setAttribute('transform',`translate(${nx},${ny}) rotate(${dragState.r})`); highlightNearestAnchor(pt); });
+    g.addEventListener('pointerup', ()=>{ dragState=null; clearAnchorHighlights(); });
+  }
+  function getTransform(g){ const m=/translate\\(([-\\d.]+),([-\\d.]+)\\) rotate\\(([-\\d.]+)\\)/.exec(g.getAttribute('transform')); return {x:+m[1],y:+m[2],r:+m[3]}; }
+  function select(el){ if(selected) selected.classList.remove('selected'); selected=el; if(selected) selected.classList.add('selected'); }
+
+  // === Outil TUYAU : orthogonal, magnétique, matériaux, Ø ===
+  let pipeDraft=null, pipePoints=[];
+  function pipeStrokePaint(){ return currentPipeMat==='cuivre' ? 'url(#copperGrad)' : '#cfd6df'; }
+  function pipeStrokeWidth(){ return Math.max(6, Math.round(currentPipeDia*0.6)); } // mapping simple mm -> px
+
+  function startPipeAt(pt){
+    pipePoints=[{x:snap(pt.x), y:snap(pt.y)}];
+    pipeDraft=svgEl('polyline');
+    pipeDraft.setAttribute('points', `${pipePoints[0].x},${pipePoints[0].y}`);
+    pipeDraft.setAttribute('fill','none');
+    pipeDraft.setAttribute('stroke', pipeStrokePaint());
+    pipeDraft.setAttribute('stroke-width', pipeStrokeWidth());
+    pipeDraft.setAttribute('stroke-linecap','round');
+    pipeDraft.setAttribute('stroke-linejoin','round');
+    pipeDraft.setAttribute('filter','url(#softShadow)');
+    pipeLayer.appendChild(pipeDraft);
+  }
+  function updatePipePreview(pt,constrain){
+    if(!pipeDraft) return;
+    const last=pipePoints[pipePoints.length-1];
+    let nx=snap(pt.x), ny=snap(pt.y);
+    const near=findNearestAnchor({x:nx,y:ny},12); if(near){ nx=near.x; ny=near.y; }
+    const dx=Math.abs(nx-last.x), dy=Math.abs(ny-last.y);
+    if(constrain || true){ if(dx>dy) ny=last.y; else nx=last.x; } // toujours orthogonal
+    const tmp=pipePoints.concat([{x:nx,y:ny}]);
+    pipeDraft.setAttribute('points', tmp.map(p=>`${p.x},${p.y}`).join(' '));
+  }
+  function commitPipePoint(pt,constrain){
+    if(!pipeDraft){ startPipeAt(pt); return; }
+    const last=pipePoints[pipePoints.length-1];
+    let nx=snap(pt.x), ny=snap(pt.y);
+    const near=findNearestAnchor({x:nx,y:ny},12); if(near){ nx=near.x; ny=near.y; }
+    const dx=Math.abs(nx-last.x), dy=Math.abs(ny-last.y);
+    if(constrain || true){ if(dx>dy) ny=last.y; else nx=last.x; }
+    if(nx!==last.x || ny!==last.y){ pipePoints.push({x:nx,y:ny}); }
+    pipeDraft.setAttribute('points', pipePoints.map(p=>`${p.x},${p.y}`).join(' '));
+  }
+  function finishPipe(){ pipeDraft=null; pipePoints=[]; }
+
+  function findNearestAnchor(pt,tol=10){
+    const anchors=[...compLayer.querySelectorAll('.anchor')];
+    let best=null, bestD=Infinity;
+    anchors.forEach(a=>{ const loc=pointOnElement(a); const d=Math.hypot(loc.x-pt.x, loc.y-pt.y); a.classList.toggle('hot', d<tol); if(d<tol && d<bestD){ best=loc; bestD=d; }});
+    return best;
+  }
+  function pointOnElement(el){ const g=el.parentNode; const {x,y,r}=getTransform(g); const cx=+el.getAttribute('cx'), cy=+el.getAttribute('cy'); const rad=r*Math.PI/180; const rx=Math.cos(rad)*cx - Math.sin(rad)*cy; const ry=Math.sin(rad)*cx + Math.cos(rad)*cy; return {x:x+rx, y:y+ry}; }
+  function clearAnchorHighlights(){ compLayer.querySelectorAll('.anchor').forEach(a=>a.classList.remove('hot')); }
+
+  // Interactions canvas
+  svg.addEventListener('pointerdown', e=>{ if(e.target.closest('#uiLayer')) return; if(currentTool==='pipe'){ commitPipePoint(svgPoint(e), e.shiftKey); } else if(e.target===svg){ select(null); }});
+  svg.addEventListener('pointermove', e=>{ if(currentTool==='pipe' && pipeDraft){ updatePipePreview(svgPoint(e), e.shiftKey); }});
+  svg.addEventListener('dblclick', ()=>{ if(currentTool==='pipe') finishPipe(); });
+
+  // Outils + UI matériau/Ø
+  function setTool(t){ currentTool=t; hudTool.textContent=(t==='pipe'?'Tuyau':'Sélection'); }
+  $('#pipeToolBtn').onclick=()=>setTool('pipe'); $('#selectToolBtn').onclick=()=>setTool('select');
+  document.addEventListener('keydown', e=>{ if(e.key==='p'||e.key==='P') setTool('pipe'); if(e.key==='v'||e.key==='V') setTool('select'); if(e.key==='r'||e.key==='R') if(selected) rotate(selected); if(e.key==='Delete'||e.key==='Backspace') if(selected){ selected.remove(); selected=null; } if(e.key==='Enter'&&currentTool==='pipe') finishPipe(); });
+  $('#matPlastic').onclick=()=>{ currentPipeMat='plastique'; $('#matPlastic').setAttribute('aria-pressed','true'); $('#matCopper').setAttribute('aria-pressed','false'); if(pipeDraft){ pipeDraft.setAttribute('stroke', pipeStrokePaint()); } };
+  $('#matCopper').onclick=()=>{ currentPipeMat='cuivre';   $('#matPlastic').setAttribute('aria-pressed','false'); $('#matCopper').setAttribute('aria-pressed','true');  if(pipeDraft){ pipeDraft.setAttribute('stroke', pipeStrokePaint()); } };
+  $('#pipeDia').onchange=e=>{ currentPipeDia=parseInt(e.target.value,10)||16; if(pipeDraft){ pipeDraft.setAttribute('stroke-width', pipeStrokeWidth()); } };
+
+  // Import fond
+  $('#importBgBtn').onclick=()=>$('#bgFile').click();
+  $('#bgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const fr=new FileReader(); fr.onload=()=>{ const img=svgEl('image'); img.setAttributeNS('http://www.w3.org/1999/xlink','href',fr.result); img.setAttribute('x','0'); img.setAttribute('y','0'); img.setAttribute('width','2400'); img.setAttribute('height','1600'); if(bgLayer.firstChild) bgLayer.replaceChild(img,bgLayer.firstChild); else bgLayer.appendChild(img); }; fr.readAsDataURL(f); });
+  let bgLocked=false; $('#lockBgBtn').onclick=()=>{ bgLocked=!bgLocked; $('#lockBgBtn').textContent=bgLocked?'🔓 Déverrouiller fond':'🔒 Verrouiller fond'; bgLayer.style.pointerEvents=bgLocked?'none':'auto'; };
+
+  // Export
+  $('#exportSVGBtn').onclick=()=>{ const clone=svg.cloneNode(true); clone.querySelectorAll('.selected').forEach(n=>n.classList.remove('selected')); const data=new XMLSerializer().serializeToString(clone); download(URL.createObjectURL(new Blob([data],{type:'image/svg+xml'})),'plumbsketch.svg'); };
+  $('#exportPNGBtn').onclick=()=>{ const clone=svg.cloneNode(true); clone.querySelectorAll('.selected').forEach(n=>n.classList.remove('selected')); const data=new XMLSerializer().serializeToString(clone); const img=new Image(); const url=URL.createObjectURL(new Blob([data],{type:'image/svg+xml;charset=utf-8'})); img.onload=()=>{ const c=document.createElement('canvas'); c.width=svg.viewBox.baseVal.width; c.height=svg.viewBox.baseVal.height; const ctx=c.getContext('2d'); ctx.fillStyle='#0b0f15'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(img,0,0); c.toBlob(b=>download(URL.createObjectURL(b),'plumbsketch.png')); URL.revokeObjectURL(url); }; img.src=url; };
+  function download(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+
+  // Zoom (Ctrl+wheel)
+  let scale=1; document.getElementById('workwrap').addEventListener('wheel',e=>{ if(!e.ctrlKey) return; e.preventDefault(); scale=Math.min(2,Math.max(0.4, scale+(e.deltaY<0?0.1:-0.1))); svg.style.transformOrigin='0 0'; svg.style.transform=`scale(${scale})`; document.getElementById('zoom').textContent=Math.round(scale*100)+'%'; },{passive:false});
+
+  // Démo + chargement auto depuis /composants
+  placeDemo(); loadExternalComponents();
+
+  function placeDemo(){ ['pipe-straight','elbow-90','tee','valve','tap'].forEach((id,i)=>{ const m=library.find(x=>x.id===id); const g=createComponentInstance(m, 420+i*200, 320); compLayer.appendChild(g); }); }
+
+  // === Auto-bibliothèque depuis /composants ===
+  async function loadExternalComponents(){
+    let entries=[];
+    // 1) index JSON optionnel
+    try{
+      const res=await fetch('/composants/_index.json',{cache:'no-store'});
+      if(res.ok){
+        const data=await res.json();
+        if(Array.isArray(data)) entries=data;
+        else if(data && typeof data==='object'){ for(const cat in data){ (data[cat]||[]).forEach(p=>entries.push({name:basename(p), cat, path:p})); } }
+      }
+    }catch(e){}
+    // 2) sinon, tenter un listing HTML (autoindex)
+    if(entries.length===0){
+      try{
+        const res=await fetch('/composants/'); if(res.ok){ const html=await res.text(); const files=parseLinksFromListing(html,'/composants/'); entries.push(...files.map(p=>({name:basename(p), cat:inferCatFromPath(p)||'Autres', path:p}))); }
+      }catch(e){}
+    }
+    // 3) Hydrate UI
+    for(const it of entries){
+      const cat = it.cat || inferCatFromPath(it.path) || 'Autres';
+      const name= it.name || basename(it.path);
+      const comp = makeImageComponent(name,cat,it.path);
+      library.push(comp); ensureCategory(cat); addPaletteItem(comp);
+    }
+  }
+
+  // Schéma de nommage fichiers :
+  // /composants/<Categorie>/<Nom_du_composant>@64.png
+  // - Catégorie = nom du sous-dossier (ex. Raccords, Vannes, Sanitaires…)
+  // - Nom = nom de fichier sans extension, "_" -> espace (ex. "Vanne_papillon")
+  // - Suffixe optionnel "@64" pour une taille préférée d’aperçu (ignoré si absent)
+  function makeImageComponent(name,cat,href){
+    const id=makeId('img');
+    return {id,name:prettyName(name),cat,href,render:(g)=>{ const img=svgEl('image'); img.setAttributeNS('http://www.w3.org/1999/xlink','href',href); const sz=parsePreferredSize(name)||80; img.setAttribute('x',-sz/2); img.setAttribute('y',-sz/2); img.setAttribute('width',sz); img.setAttribute('height',sz); img.setAttribute('preserveAspectRatio','xMidYMid meet'); g.appendChild(img); addAnchors(g,[{x:-sz/2,y:0},{x:sz/2,y:0},{x:0,y:-sz/2},{x:0,y:sz/2}]); }};
+  }
+  function ensureCategory(name){ if(catMap[name]) return; const details=document.createElement('details'); details.open=true; const sum=document.createElement('summary'); sum.textContent=name; details.appendChild(sum); const body=document.createElement('div'); body.className='cat-body'; const gridC=document.createElement('div'); gridC.className='palette'; body.appendChild(gridC); details.appendChild(body); catsEl.appendChild(details); catMap[name]=gridC; }
+  function inferCatFromPath(p){ const parts=p.split('/').filter(Boolean); return parts.length>=2 ? decodeURIComponent(parts[parts.length-2]) : null; }
+  function basename(p){ const a=p.split('/'); return decodeURIComponent(a[a.length-1]||p); }
+  function prettyName(file){ return file.replace(/\\.[a-z0-9]+$/i,'').replace(/@\\d+$/,'').replace(/[_-]+/g,' ').trim(); }
+  function parsePreferredSize(file){ const m=/@(\\d+)(?=\\.[a-z0-9]+$|$)/i.exec(file); return m? Math.max(40, Math.min(160, +m[1])) : null; }
+  function parseLinksFromListing(html,base){ const div=document.createElement('div'); div.innerHTML=html; const exts=['.png','.jpg','.jpeg','.webp']; const anchors=[...div.querySelectorAll('a')]; const urls=anchors.map(a=>a.getAttribute('href')||'').filter(h=>exts.some(ext=>h.toLowerCase().endsWith(ext))); return urls.map(u=>u.startsWith('http')?u:(base+u).replace(/\\\\/g,'/')); }
+
+  // Helpers SVG
+  function svgEl(n){ return document.createElementNS('http://www.w3.org/2000/svg',n); }
+  function rect(x,y,w,h,r){ const el=svgEl('rect'); el.setAttribute('x',x); el.setAttribute('y',y); el.setAttribute('width',w); el.setAttribute('height',h); if(r) el.setAttribute('rx',r); return el; }
+  function line(x1,y1,x2,y2){ const el=svgEl('line'); el.setAttribute('x1',x1); el.setAttribute('y1',y1); el.setAttribute('x2',x2); el.setAttribute('y2',y2); return el; }
+  function circle(cx,cy,r){ const el=svgEl('circle'); el.setAttribute('cx',cx||0); el.setAttribute('cy',cy||0); el.setAttribute('r',r||5); return el; }
+  function path(d){ const el=svgEl('path'); el.setAttribute('d',d); return el; }
+  function group(...kids){ const g=svgEl('g'); kids.forEach(k=>g.appendChild(k)); return g; }
+  function styleStroke(el,paint,w){ el.setAttribute('stroke',paint); el.setAttribute('stroke-width',w); el.setAttribute('fill','none'); el.setAttribute('stroke-linecap','round'); el.setAttribute('stroke-linejoin','round'); el.setAttribute('filter','url(#softShadow)'); }
+
+})();
+</script>
+</body>
+</html>
